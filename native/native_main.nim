@@ -12,27 +12,45 @@ import options
 import osproc
 # https://nim-lang.org/docs/json.html
 
+let VERSION = "0.2.0"
+
 type 
     MessageResp* = object
+        cmd*, version*, content*, error*, command*: Option[string]
+        code: Option[int]
+
+type 
+    MessageRecv* = object
         cmd*, version*, content*, error*, command*: Option[string]
         code: Option[int]
 
 # let a = MessageResp(cmd: some(""))
 # echo(a)
 
-proc getMessage(): MessageResp =
+proc getMessage(): MessageRecv =
 
     # length of the string - not required AFAICT
     var length: int32
     discard readBuffer(stdin, addr(length), 4)
 
-    var command = to(parseJson(readAll(stdin)),MessageResp)
-    
-    command.content = some(execProcess(command.command.get(), options={poUsePath,poEvalCommand,poStdErrToStdOut}))
+    return to(parseJson(readAll(stdin)),MessageRecv)
+
+proc handleMessage(msg: MessageRecv): MessageResp =
+
+    let cmd = msg.cmd.get()
+    var command: MessageResp
+
+    case cmd:
+        of "run":
+            command.content = some(execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut}))
+            command.code = some(0) # need to use something other than execProcess to capture this
+
+        of "version":
+            command.version = some(VERSION)
 
     return command
 
-echo(%* getMessage()) # %* converts the object to JSON
+write(stdout, %* handleMessage(getMessage())) # %* converts the object to JSON
 
 
 # https://nim-lang.org/docs/io.html#stdin
