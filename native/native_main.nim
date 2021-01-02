@@ -10,7 +10,8 @@
 import json
 import options
 import osproc
-# https://nim-lang.org/docs/json.html
+# import endians
+import struct # nimble install struct
 
 let VERSION = "0.2.0"
 
@@ -50,7 +51,16 @@ proc handleMessage(msg: MessageRecv): MessageResp =
 
     return command
 
-write(stdout, %* handleMessage(getMessage())) # %* converts the object to JSON
+let message = $ %* handleMessage(getMessage()) # %* converts the object to JSON
+
+# this works fine V so I reckon the problem must be with the "nulls" it spits out
+# could just write our own JSON? ... is that so mad?
+# let message = "{\"version\": \"0.1.11\"}" #$ %* handleMessage(getMessage()) # %* converts the object to JSON
+
+let l = pack("@I", message.len)
+
+write(stdout, l)
+write(stdout, message) # %* converts the object to JSON
 
 
 # https://nim-lang.org/docs/io.html#stdin
