@@ -16,11 +16,6 @@ import struct # nimble install struct
 let VERSION = "0.2.0"
 
 type 
-    MessageResp* = object
-        cmd*, version*, content*, error*, command*: Option[string]
-        code: Option[int]
-
-type 
     MessageRecv* = object
         cmd*, version*, content*, error*, command*: Option[string]
         code: Option[int]
@@ -36,26 +31,29 @@ proc getMessage(): MessageRecv =
 
     return to(parseJson(readAll(stdin)),MessageRecv)
 
-proc handleMessage(msg: MessageRecv): MessageResp =
+proc handleMessage(msg: MessageRecv): string =
 
     let cmd = msg.cmd.get()
-    var command: MessageResp
+    var command: string
 
     case cmd:
         of "run":
-            command.content = some(execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut}))
-            command.code = some(0) # need to use something other than execProcess to capture this
+            command = "{\"cmd\": \"run\", \"content\": \"" & $ (execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut})) & "\", \"code\": 0}"
 
         of "version":
-            command.version = some(VERSION)
+            command = "{\"version\": \"" & VERSION & "\"}"
 
     return command
 
-let message = $ %* handleMessage(getMessage()) # %* converts the object to JSON
+let message = handleMessage(getMessage())
 
 # this works fine V so I reckon the problem must be with the "nulls" it spits out
 # could just write our own JSON? ... is that so mad?
 # let message = "{\"version\": \"0.1.11\"}" #$ %* handleMessage(getMessage()) # %* converts the object to JSON
+
+# but this doesn't work -_-
+# bleugh
+# let message = "{\"version\": \"0.2.0\"}" #$ %* handleMessage(getMessage()) # %* converts the object to JSON
 
 let l = pack("@I", message.len)
 
