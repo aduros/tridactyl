@@ -16,7 +16,7 @@ import posix
 # import endians
 import struct # nimble install struct
 
-let VERSION = "0.2.0"
+const VERSION = "0.2.0"
 
 type 
     MessageRecv* = object
