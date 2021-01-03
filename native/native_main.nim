@@ -61,6 +61,25 @@ proc getMessage(strm: Stream): MessageRecv =
         quit(0)
 
 
+proc findUserConfigFile(): Option[string] =
+    let config_dir = getenv("XDG_CONFIG_HOME", expandTilde("~/.config"))
+    let candidate_files = [
+        config_dir / "tridactyl" / "tridactylrc",
+        getHomeDir() / ".tridactylrc",
+        getHomeDir() / "_config", "tridactyl" / "tridactylrc",
+        getHomeDir() / "_tridactylrc",
+    ]
+
+    var config_path = none(string)
+
+    for path in candidate_files:
+        if fileExists(path):
+            config_path = some(path)
+            break
+
+    return config_path
+
+
 proc handleMessage(msg: MessageRecv): string =
 
     let cmd = msg.cmd.get()
@@ -74,7 +93,10 @@ proc handleMessage(msg: MessageRecv): string =
             write(stderr, "TODO: NOT IMPLEMENTED\n")
 
         of "getconfigpath":
-            write(stderr, "TODO: NOT IMPLEMENTED\n")
+            reply.content = findUserConfigFile()
+            reply.code = some(0)
+            if not isSome(reply.content):
+                reply.code = some(1)
 
         of "run":
             # this seems to use /bin/sh rather than the user's shell
