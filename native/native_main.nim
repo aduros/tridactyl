@@ -10,6 +10,7 @@
 import json
 import options
 import osproc
+import streams
 # import endians
 import struct # nimble install struct
 
@@ -19,46 +20,70 @@ type
     MessageRecv* = object
         cmd*, version*, content*, error*, command*: Option[string]
         code: Option[int]
+type 
+    MessageResp* = object
+        cmd*, version*, content*, error*, command*: Option[string]
+        code: Option[int]
 
 # let a = MessageResp(cmd: some(""))
 # echo(a)
 
-proc getMessage(): MessageRecv =
+proc getMessage(strm: Stream): MessageRecv =
 
-    # length of the string - not required AFAICT
-    var length: int32
-    discard readBuffer(stdin, addr(length), 4)
+    try:
+        # length of the string - not required AFAICT
+        var length: int32
+        #discard readBuffer(stdin, addr(length), 4)
+        read(strm,length)
+        write(stderr, "Reading message length: " & $length & "\n")
+        if length == 0:
+            write(stderr, "No further messages, quitting.\n")
+            close(strm)
+            quit(0)
 
-    return to(parseJson(readAll(stdin)),MessageRecv)
+        let message = readStr(strm, length)
+        write(stderr, "Got message: " & message & "\n")
+        return to(parseJson(message),MessageRecv)
+    except IOError:
+        write(stderr, "IO error - no further messages, quitting.\n")
+        close(strm)
+        quit(0)
+
 
 proc handleMessage(msg: MessageRecv): string =
 
     let cmd = msg.cmd.get()
-    var command: string
+    var command: MessageResp
 
     case cmd:
         of "run":
-            command = "{\"cmd\": \"run\", \"content\": \"" & $ (execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut})) & "\", \"code\": 0}"
+            command.content = some($ execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut}))
 
         of "version":
-            command = "{\"version\": \"" & VERSION & "\"}"
+            command.version = some(VERSION)
 
-    return command
+    return $ %* command
 
-let message = handleMessage(getMessage())
+while true:
+    let strm = newFileStream(stdin)
+    write(stderr, "Waiting for message\n")
+    # discard handleMessage(getMessage(strm))
+    let message = handleMessage(getMessage(strm))
 
-# this works fine V so I reckon the problem must be with the "nulls" it spits out
-# could just write our own JSON? ... is that so mad?
-# let message = "{\"version\": \"0.1.11\"}" #$ %* handleMessage(getMessage()) # %* converts the object to JSON
+    # this doesn't work reliably : (
+    # let message = "{\"version\": \"0.2.0\"}" #$ %* handleMessage(getMessage()) # %* converts the object to JSON
 
-# but this doesn't work -_-
-# bleugh
-# let message = "{\"version\": \"0.2.0\"}" #$ %* handleMessage(getMessage()) # %* converts the object to JSON
 
-let l = pack("@I", message.len)
+    write(stderr, "Sending reply: " & message & "\n")
 
-write(stdout, l)
-write(stdout, message) # %* converts the object to JSON
+    let l = pack("@I", message.len)
+
+    write(stdout, l)
+    write(stdout, message) # %* converts the object to JSON
+    flushFile(stdout)
+    write(stderr, "Sent message!\n")
+
+# quit(0)
 
 
 # https://nim-lang.org/docs/io.html#stdin
