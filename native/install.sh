@@ -52,8 +52,7 @@ run() {
     # over instead of downloading it
     if [ "$1" = "local" ]; then
         cp -f native/tridactyl.json "$manifest_file"
-        chmod +x native/native_main
-        cp -f native/native_main "$native_file"
+        cp -f native/native_main.py "$native_file"
     else
         curl -sS --create-dirs -o "$manifest_file" "$manifest_loc"
         curl -sS --create-dirs -o "$native_file" "$native_loc"
