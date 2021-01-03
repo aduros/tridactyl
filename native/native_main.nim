@@ -20,7 +20,7 @@ let VERSION = "0.2.0"
 
 type 
     MessageRecv* = object
-        cmd*, version*, content*, error*, command*, variable*: Option[string]
+        cmd*, version*, content*, error*, command*, variable*, file*, dir*, to*, origin*: Option[string]
         code: Option[int]
 type 
     MessageResp* = object
@@ -29,6 +29,14 @@ type
 
 # let a = MessageResp(cmd: some(""))
 # echo(a)
+
+proc trySwapJsonKey(json: JsonNode, old: string, nouveau: string) =
+    try:
+        json[nouveau] = json[old]
+        delete(json, old)
+    except KeyError:
+        discard
+
 
 proc getMessage(strm: Stream): MessageRecv =
 
@@ -47,11 +55,8 @@ proc getMessage(strm: Stream): MessageRecv =
 
         # Compatibility with Python native messenger:
         # rename env's _var_ key to _variable_ coz _var_ is reserved in Nim
-        try:
-            raw_json["variable"] = raw_json["var"]
-            delete(raw_json, "var")
-        except KeyError:
-            discard
+        trySwapJsonKey(raw_json, "var", "variable")
+        trySwapJsonKey(raw_json, "from", "origin")
 
         return to(raw_json,MessageRecv)
 
@@ -111,16 +116,44 @@ proc handleMessage(msg: MessageRecv): string =
             write(stderr, "TODO: NOT IMPLEMENTED\n")
 
         of "read":
-            write(stderr, "TODO: NOT IMPLEMENTED\n")
+            try:
+                var f: File
+                discard open(f, expandTilde(msg.file.get()))
+                reply.content = some(readAll(f))
+                reply.code = some(0)
+                close(f)
+            except IOError:
+                reply.content = none(string)
+                reply.code = some(2)
 
         of "mkdir":
-            write(stderr, "TODO: NOT IMPLEMENTED\n")
+            try:
+                createDir(expandTilde(msg.dir.get()))
+                reply.content = some("")
+                reply.code = some(0)
+            except OSError:
+                reply.code = some(2)
 
         of "move":
-            write(stderr, "TODO: NOT IMPLEMENTED\n")
+            let dest = expandTilde(msg.to.get())
+            if fileExists(dest):
+                reply.code = some 1
+            else:
+                try:
+                    moveFile(dest,msg.origin.get())
+                    reply.code = some 0
+                except OSError:
+                    reply.code = some 2
 
         of "write":
-            write(stderr, "TODO: NOT IMPLEMENTED\n")
+            try:
+                var f: File
+                discard open(f, expandTilde(msg.file.get()), fmWrite)
+                write(f, msg.content.get())
+                reply.code = some(0)
+                close(f)
+            except IOError:
+                reply.code = some(2)
 
         of "writerc":
             write(stderr, "TODO: NOT IMPLEMENTED\n")
@@ -130,7 +163,6 @@ proc handleMessage(msg: MessageRecv): string =
 
         of "env":
             reply.content = some(getEnv(msg.variable.get()))
-            write(stderr, "TODO: NOT IMPLEMENTED\n")
 
         of "list_dir":
             write(stderr, "TODO: NOT IMPLEMENTED\n")
