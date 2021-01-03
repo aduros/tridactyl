@@ -20,11 +20,12 @@ type MessageCommand =
     | "list_dir"
     | "mkdir"
     | "move"
-    | "eval"
+    | "eval" // Deprecated - only works in native < 0.2.0
     | "getconfig"
     | "getconfigpath"
     | "env"
     | "win_firefox_restart"
+    | "ppid"
 interface MessageResp {
     cmd: string
     version: string | null
@@ -346,6 +347,10 @@ export async function run(command: string, content = "") {
 
 /** Evaluates a string in the native messenger. This has to be python code. If
  *  you want to run shell strings, use run() instead.
+ *
+ *  __DEPRECATED!__
+ *
+ *  Only works for native messenger versions < 0.2.0.
  */
 export async function pyeval(command: string): Promise<MessageResp> {
     return sendNativeMsg("eval", { command })
@@ -435,12 +440,22 @@ export async function ff_cmdline(): Promise<string[]> {
                 '$pproc = Get-CimInstance Win32_Process | Where-Object -Property ProcessId -EQ $ppid}; Write-Output $pproc.CommandLine"',
         )
     } else {
-        output = await pyeval(
-            // Using ' and + rather than ` because we don't want newlines
-            'handleMessage({"cmd": "run", ' +
-                '"command": "ps -p " + str(os.getppid()) + " -oargs="})["content"]',
-        )
-        return output.content.trim().split(" ")
+
+        const actualVersion = await getNativeMessengerVersion()
+
+
+        // Backwards-compat for Python native messenger
+        if ( semverCompare("0.2.0", actualVersion) > 0 ) {
+            output = await pyeval(
+                // Using ' and + rather than ` because we don't want newlines
+                'handleMessage({"cmd": "run", ' +
+                    '"command": "ps -p " + str(os.getppid()) + " -oargs="})["content"]',
+            )
+        } else {
+            const ppid = (await sendNativeMsg("ppid", {})).content.trim()
+            output = await run("ps -p " + ppid + " -oargs=")
+        }
+        return output.content.replace("\n", "").trim().split(" ")
     }
 }
 

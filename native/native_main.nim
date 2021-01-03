@@ -11,6 +11,8 @@ import json
 import options
 import osproc
 import streams
+import os
+import posix
 # import endians
 import struct # nimble install struct
 
@@ -18,7 +20,7 @@ let VERSION = "0.2.0"
 
 type 
     MessageRecv* = object
-        cmd*, version*, content*, error*, command*: Option[string]
+        cmd*, version*, content*, error*, command*, variable*: Option[string]
         code: Option[int]
 type 
     MessageResp* = object
@@ -31,9 +33,7 @@ type
 proc getMessage(strm: Stream): MessageRecv =
 
     try:
-        # length of the string - not required AFAICT
         var length: int32
-        #discard readBuffer(stdin, addr(length), 4)
         read(strm,length)
         write(stderr, "Reading message length: " & $length & "\n")
         if length == 0:
@@ -43,7 +43,18 @@ proc getMessage(strm: Stream): MessageRecv =
 
         let message = readStr(strm, length)
         write(stderr, "Got message: " & message & "\n")
-        return to(parseJson(message),MessageRecv)
+        var raw_json = parseJson(message)
+
+        # Compatibility with Python native messenger:
+        # rename env's _var_ key to _variable_ coz _var_ is reserved in Nim
+        try:
+            raw_json["variable"] = raw_json["var"]
+            delete(raw_json, "var")
+        except KeyError:
+            discard
+
+        return to(raw_json,MessageRecv)
+
     except IOError:
         write(stderr, "IO error - no further messages, quitting.\n")
         close(strm)
@@ -53,16 +64,69 @@ proc getMessage(strm: Stream): MessageRecv =
 proc handleMessage(msg: MessageRecv): string =
 
     let cmd = msg.cmd.get()
-    var command: MessageResp
+    var reply: MessageResp
 
     case cmd:
-        of "run":
-            command.content = some($ execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut}))
-
         of "version":
-            command.version = some(VERSION)
+            reply.version = some(VERSION)
 
-    return $ %* command
+        of "getconfig":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "getconfigpath":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "run":
+            # this seems to use /bin/sh rather than the user's shell
+            reply.content = some($ execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut}))
+
+        of "eval":
+            # do we actually want to implement this?
+            # we'd have to start up Python
+            # with whatever stuff is usually used imported
+
+            # should probably deprecate it instead
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "read":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "mkdir":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "move":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "write":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "writerc":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "temp":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "env":
+            reply.content = some(getEnv(msg.variable.get()))
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "list_dir":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "win_firefox_restart":
+            write(stderr, "TODO: NOT IMPLEMENTED\n")
+
+        of "ppid":
+            reply.content = some($getppid())
+
+        else:
+            reply.cmd = some("error")
+            reply.error = some("Unhandled message")
+            write(stderr, "Unhandled message: " & $ msg & "\n")
+
+
+
+    return $ %* reply # $ converts to string, %* converts to JSON
 
 while true:
     let strm = newFileStream(stdin)
