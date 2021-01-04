@@ -21,19 +21,12 @@ const VERSION = "0.2.0"
 
 type 
     MessageRecv* = object
-        cmd*, version*, content*, error*, command*, variable*, file*, dir*, to*, origin*, prefix*: Option[string]
+        cmd*, version*, content*, error*, command*, `var`*, file*, dir*, to*, `from`*, prefix*: Option[string]
         code: Option[int]
 type 
     MessageResp* = object
         cmd*, version*, content*, error*, command*: Option[string]
         code: Option[int]
-
-proc trySwapJsonKey(json: JsonNode, old: string, nouveau: string) =
-    try:
-        json[nouveau] = json[old]
-        delete(json, old)
-    except KeyError:
-        discard
         
 # Vastly simpler than the Python version
 # Let's let users check if that matters : )
@@ -58,11 +51,6 @@ proc getMessage(strm: Stream): MessageRecv =
         let message = readStr(strm, length)
         write(stderr, "Got message: " & message & "\n")
         var raw_json = parseJson(message)
-
-        # Compatibility with Python native messenger:
-        # rename env's _var_ key to _variable_ coz _var_ is reserved in Nim
-        trySwapJsonKey(raw_json, "var", "variable")
-        trySwapJsonKey(raw_json, "from", "origin")
 
         return to(raw_json,MessageRecv)
 
@@ -148,7 +136,7 @@ proc handleMessage(msg: MessageRecv): string =
                 reply.code = some 1
             else:
                 try:
-                    moveFile(dest,msg.origin.get())
+                    moveFile(dest,msg.`from`.get())
                     reply.code = some 0
                 except OSError:
                     reply.code = some 2
@@ -178,7 +166,7 @@ proc handleMessage(msg: MessageRecv): string =
                 reply.code = some(2)
 
         of "env":
-            reply.content = some(getEnv(msg.variable.get()))
+            reply.content = some(getEnv(msg.`var`.get()))
 
         of "list_dir":
             write(stderr, "TODO: NOT IMPLEMENTED\n")
