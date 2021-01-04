@@ -13,22 +13,20 @@ import osproc
 import streams
 import os
 import posix
-# import endians
+import strutils
 import struct # nimble install struct
+import tempfile # nimble install tempfile
 
 const VERSION = "0.2.0"
 
 type 
     MessageRecv* = object
-        cmd*, version*, content*, error*, command*, variable*, file*, dir*, to*, origin*: Option[string]
+        cmd*, version*, content*, error*, command*, variable*, file*, dir*, to*, origin*, prefix*: Option[string]
         code: Option[int]
 type 
     MessageResp* = object
         cmd*, version*, content*, error*, command*: Option[string]
         code: Option[int]
-
-# let a = MessageResp(cmd: some(""))
-# echo(a)
 
 proc trySwapJsonKey(json: JsonNode, old: string, nouveau: string) =
     try:
@@ -36,10 +34,18 @@ proc trySwapJsonKey(json: JsonNode, old: string, nouveau: string) =
         delete(json, old)
     except KeyError:
         discard
+        
+# Vastly simpler than the Python version
+# Let's let users check if that matters : )
+proc sanitiseFilename(fn: string): string =
+    var ans = ""
+    for c in toLowerAscii(fn):
+        if isAlphanumeric(c) or c == '.':
+            add(ans,c)
 
+    return replace(ans,"..",".")
 
 proc getMessage(strm: Stream): MessageRecv =
-
     try:
         var length: int32
         read(strm,length)
@@ -106,6 +112,8 @@ proc handleMessage(msg: MessageRecv): string =
         of "run":
             # this seems to use /bin/sh rather than the user's shell
             reply.content = some($ execProcess(msg.command.get(), options={poEvalCommand,poStdErrToStdOut}))
+            reply.code = some 0
+            # probably important to catch the exit code so we can `:cq` in Vim to cancel Ctrl-I
 
         of "eval":
             # do we actually want to implement this?
@@ -159,7 +167,15 @@ proc handleMessage(msg: MessageRecv): string =
             write(stderr, "TODO: NOT IMPLEMENTED\n")
 
         of "temp":
-            write(stderr, "TODO: NOT IMPLEMENTED\n")
+            try:
+                let prefix = "tmp_" & sanitiseFilename(msg.prefix.get("")) & "_"
+                var (f, filepath) = mkstemp(prefix, ".txt", "", fmWrite)
+                write(f, msg.content.get())
+                reply.code = some(0)
+                reply.content = some(filepath)
+                close(f)
+            except IOError:
+                reply.code = some(2)
 
         of "env":
             reply.content = some(getEnv(msg.variable.get()))
